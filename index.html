@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Capas de la Tierra — Interactivo + Animaciones</title>
+<meta name="description" content="Capas internas de la Tierra con botones por capa, flechas señalizadas, animación de geodinamo y convección, tooltips, locución y zoom.">
+<style>
+  :root{
+    --bg:#0f172a; --panel:#0b1220; --muted:#94a3b8; --text:#e5e7eb; --brand:#22d3ee; --focus:#fde047;
+    --corteza:#9CA3AF; --manto-sup:#FF9E3D; --manto-inf:#F97316; --nucleo-ext:#EA580C; --nucleo-int:#FDE047;
+    --atm:#60A5FA; --hid:#22C55E; --lit:#7C3AED;
+  }
+  html,body{height:100%}
+  body{
+    margin:0; background: radial-gradient(1200px 800px at 10% 10%, #0a1223, var(--bg));
+    color:var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Inter, Arial;
+    display:flex; align-items:center; justify-content:center; padding: clamp(12px,2vw,24px);
+  }
+  .app{ width:min(1250px,100%); display:grid; grid-template-columns: 1.1fr 420px; gap: clamp(16px,3vw,28px); align-items:stretch; }
+  @media (max-width: 980px){ .app{ grid-template-columns: 1fr; } }
+
+  /* Tarjeta izquierda */
+  .stage{
+    background: linear-gradient(180deg, rgba(255,255,255,.04), transparent);
+    border:1px solid rgba(255,255,255,.08);
+    border-radius:16px; padding: clamp(12px,2vw,20px);
+    box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.04);
+    position:relative;
+  }
+  .stage h1{ margin:.2rem 0 .2rem; font-weight:700; font-size: clamp(1.2rem, 3vw, 1.8rem); }
+  .subtitle{ color:var(--muted); font-size:.95rem; margin:0 0 .5rem; }
+
+  /* Controles superiores */
+  .layer-buttons, .chips{ display:flex; flex-wrap:wrap; gap:8px; margin:.4rem 0 .6rem; }
+  .layer-btn, .chip{
+    --clr: #777;
+    display:inline-flex; align-items:center; gap:.5rem; padding:.45rem .7rem;
+    background: color-mix(in srgb, var(--clr) 16%, transparent);
+    border:1px solid color-mix(in srgb, var(--clr) 50%, transparent);
+    color: color-mix(in srgb, var(--clr) 85%, white);
+    border-radius:10px; font-size:.92rem; cursor:pointer; user-select:none;
+  }
+  .layer-btn[data-layer="corteza"]{ --clr: var(--corteza); }
+  .layer-btn[data-layer="mantoSuperior"]{ --clr: var(--manto-sup); }
+  .layer-btn[data-layer="mantoInferior"]{ --clr: var(--manto-inf); }
+  .layer-btn[data-layer="nucleoExterno"]{ --clr: var(--nucleo-ext); }
+  .layer-btn[data-layer="nucleoInterno"]{ --clr: var(--nucleo-int); }
+  .chip{ --clr: var(--atm); }
+  .chip[data-layer="hidrosfera"]{ --clr: var(--hid); }
+  .chip[data-layer="litosfera"]{ --clr: var(--lit); }
+  .layer-btn:focus-visible,.chip:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
+
+  /* Controles de vista */
+  .controls{
+    display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center;
+    padding:.5rem .6rem; border-radius:10px; background: rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.08);
+    margin:.4rem 0 .8rem;
+  }
+  .controls label{ display:flex; align-items:center; gap:.45rem; color:var(--muted); font-size:.9rem; }
+  .controls input[type="range"]{ width:140px; }
+  .controls .sep{ width:1px; height:22px; background:rgba(255,255,255,.12); }
+
+  /* Lienzo */
+  .canvas-wrap{ display:grid; place-items:center; position:relative; }
+  .earth{ width:min(620px, 100%); height:auto; filter: drop-shadow(0 30px 40px rgba(0,0,0,.45)); }
+  .label{ font-family:inherit; font-size:12px; fill:#e5e7eb; paint-order: stroke; stroke:#0b1220; stroke-width:3px; }
+  .ring{ cursor:pointer; transition: filter .2s ease, transform .15s ease; }
+  .ring:hover{ filter: brightness(1.08) saturate(1.05); }
+  .ring:focus-visible{ outline:none; filter: brightness(1.15) saturate(1.1); }
+  .arrow{ stroke:#d1d5db; stroke-width:1.6; fill:none; }
+  .arrow-head{ fill:#d1d5db; }
+  .hot{ cursor:pointer; }
+
+  /* Animaciones */
+  @keyframes spin { from{transform:rotate(0)} to{transform:rotate(360deg)} }
+  @keyframes flow { from{ stroke-dashoffset:0 } to{ stroke-dashoffset:-400 } }
+  @keyframes float { 0%{ transform:translateY(0) } 50%{ transform:translateY(-2px) } 100%{ transform:translateY(0) } }
+
+  .anim-geodynamo .geo-rotate{ transform-origin: 270px 270px; animation: spin 28s linear infinite; }
+  .anim-geodynamo .particle{ animation: float 2.4s ease-in-out infinite; }
+  .anim-conv .conv{ stroke-dasharray: 6 8; animation: flow 9s linear infinite; }
+
+  /* Tooltip */
+  #tooltip{
+    position:absolute; pointer-events:none; background:#0b1220; color:var(--text);
+    border:1px solid rgba(255,255,255,.15); border-radius:8px; padding:.35rem .5rem; font-size:.88rem; z-index:5;
+    box-shadow: 0 8px 20px rgba(0,0,0,.35);
+    transform: translate(-50%, -120%); white-space:nowrap; opacity:0; transition: opacity .12s ease;
+  }
+
+  /* Panel derecho */
+  .panel{
+    background: linear-gradient(180deg, rgba(255,255,255,.03), transparent);
+    border:1px solid rgba(255,255,255,.1); border-radius:16px; padding: clamp(14px,2vw,20px);
+    position:relative; overflow:hidden;
+  }
+  .toolbar{ position:absolute; top:8px; right:8px; display:flex; gap:6px; }
+  .btn{ background:#0b1220; border:1px solid rgba(255,255,255,.1); color:var(--text); border-radius:8px; padding:.4rem .55rem; font-size:.85rem; cursor:pointer; }
+  .btn:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
+  .panel h2{ font-size: clamp(1.1rem, 2.3vw, 1.4rem); margin:.2rem 0 .4rem; }
+  .kvs{ display:grid; grid-template-columns: 1fr 1fr; gap:.6rem .8rem; margin:.6rem 0 1rem; }
+  .kv{ background: rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06); border-radius:10px; padding:.6rem .7rem; }
+  .kv small{ display:block; color:var(--muted); font-size:.75rem; }
+  .kv strong{ font-size:.98rem; }
+  .desc{ font-size:.98rem; }
+  .curio{ margin:.9rem 0 0; font-size:.95rem; color:color-mix(in srgb, var(--brand) 80%, white); border-left:3px solid var(--brand); padding-left:.6rem; }
+  .legend{ margin-top: 1rem; display:flex; flex-wrap:wrap; gap:8px; }
+  .leg-item{ display:flex; align-items:center; gap:.5rem; font-size:.9rem; color:var(--muted);
+             background: rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06); border-radius:999px; padding:.35rem .6rem; }
+  .swatch{ width:14px; height:14px; border-radius:50%; border:1px solid rgba(255,255,255,.4); }
+  .footer-note{ color:var(--muted); font-size:.8rem; margin-top:.8rem }
+</style>
+<style type="text/css">
+.grande { font-size: 60px; }
+</style>
+<script>
+// Escribir aqui el código Javascript
+</script>
+</head>
+<body>
+  <main class="app" aria-labelledby="titulo">
+    <section class="stage" aria-describedby="subtitulo">
+      <h1 id="titulo">🌍 Capas de la Tierra — Vista combinada + Animaciones</h1>
+      <p id="subtitulo" class="subtitle">Pulsa un <strong>botón</strong> o un <strong>anillo</strong>. Activa las animaciones y la locución para una experiencia más didáctica.</p>
+
+      <!-- Botones por capa -->
+      <div class="layer-buttons" role="group" aria-label="Capas internas">
+        <button class="layer-btn" data-layer="corteza">Corteza</button>
+        <button class="layer-btn" data-layer="mantoSuperior">Manto superior</button>
+        <button class="layer-btn" data-layer="mantoInferior">Manto inferior</button>
+        <button class="layer-btn" data-layer="nucleoExterno">Núcleo externo</button>
+        <button class="layer-btn" data-layer="nucleoInterno">Núcleo interno</button>
+      </div>
+
+      <!-- Superficie -->
+      <div class="chips" role="list" aria-label="Capas superficiales">
+        <button class="chip" role="listitem" data-layer="atmósfera">☁️ Atmósfera</button>
+        <button class="chip" role="listitem" data-layer="hidrosfera">🌊 Hidrosfera</button>
+        <button class="chip" role="listitem" data-layer="litosfera">⛰️ Litosfera</button>
+      </div>
+
+      <!-- Controles de vista -->
+      <div class="controls" aria-label="Opciones de visualización">
+        <label><input type="checkbox" id="toggleArrows" checked=""> Flechas/etiquetas</label>
+        <label><input type="checkbox" id="toggleGeo" checked=""> Animar geodinamo</label>
+        <label><input type="checkbox" id="toggleConv" checked=""> Animar convección</label>
+        <span class="sep" aria-hidden="true"></span>
+        <label>Zoom <input type="range" id="zoomRange" min="80" max="160" value="100"> <span id="zoomVal">100%</span></label>
+        <span class="sep" aria-hidden="true"></span>
+        <label><input type="checkbox" id="toggleVoice"> Locución</label>
+        <label><input type="checkbox" id="toggleExpert"> Modo experto</label>
+        <button class="btn" id="resetBtn" title="Restablecer vista">Reset</button>
+      </div>
+
+      <!-- Tooltip -->
+      <div id="tooltip" role="status" aria-hidden="true"></div>
+
+      <!-- Diagrama -->
+      <div class="canvas-wrap" id="canvasWrap" aria-live="polite">
+        <svg class="earth" id="earth" viewBox="0 0 900 540" role="img" aria-label="Planeta Tierra, mitad real y mitad corte interno con animaciones y flechas">
+          <defs>
+            <radialGradient id="oceanGrad" cx="30%" cy="30%">
+              <stop offset="0%" stop-color="#2dd4bf"></stop><stop offset="60%" stop-color="#0ea5e9"></stop><stop offset="100%" stop-color="#0a74c4"></stop>
+            </radialGradient>
+            <linearGradient id="shine" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="rgba(255,255,255,0.6)"></stop><stop offset="100%" stop-color="rgba(255,255,255,0)"></stop></linearGradient>
+            <radialGradient id="shade" cx="70%" cy="70%"><stop offset="0%" stop-color="rgba(0,0,0,0)"></stop><stop offset="100%" stop-color="rgba(0,0,0,0.25)"></stop></radialGradient>
+            <!-- Gradientes de anillos -->
+            <linearGradient id="g-corteza" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#BFC5CE"></stop><stop offset="100%" stop-color="#9CA3AF"></stop></linearGradient>
+            <linearGradient id="g-manto-sup" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#FFB86B"></stop><stop offset="100%" stop-color="#FF9E3D"></stop></linearGradient>
+            <linearGradient id="g-manto-inf" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#FB923C"></stop><stop offset="100%" stop-color="#F97316"></stop></linearGradient>
+            <linearGradient id="g-nucleo-ext" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#F97316"></stop><stop offset="100%" stop-color="#EA580C"></stop></linearGradient>
+            <linearGradient id="g-nucleo-int" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#FFF176"></stop><stop offset="100%" stop-color="#FDE047"></stop></linearGradient>
+            <!-- Punta de flecha -->
+            <marker id="arrowHead" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" class="arrow-head"></path>
+            </marker>
+          </defs>
+
+          <!-- Grupo "mundo" para zoom -->
+          <g id="world" transform="translate(270,270) scale(1)">
+            <!-- Disco base + sombreado -->
+            <circle r="240" fill="url(#oceanGrad)"></circle><circle r="240" fill="url(#shade)"></circle>
+
+            <!-- Mitad izquierda (real) -->
+            <clipPath id="clipLeft"><rect x="-240" y="-240" width="240" height="480"></rect></clipPath>
+            <g clip-path="url(#clipLeft)" opacity="0.85">
+              <path d="M -30,-110 C -60,-130 -120,-120 -150,-90 C -170,-60 -160,-10 -130,10 C -100,30 -70,40 -40,20 C -10,5 10,-30 -10,-60 Z" fill="#34d399"></path>
+              <path d="M -160,70 C -140,85 -120,100 -110,120 C -120,130 -150,125 -170,110 C -185,95 -180,80 -160,70 Z" fill="#22c55e"></path>
+              <circle cx="-80" cy="-150" r="14" fill="#22c55e"></circle>
+            </g>
+
+            <!-- Mitad derecha (corte) -->
+            <clipPath id="clipRight"><rect x="0" y="-240" width="240" height="480"></rect></clipPath>
+            <g clip-path="url(#clipRight)" id="cut">
+              <!-- Convección del manto (trayectorias) -->
+              <g class="conv" stroke="rgba(255,255,255,.35)" fill="none">
+                <path d="M 90,-170 q 20,40 0,80 q -20,40 0,80"></path>
+                <path d="M 135,-150 q 18,36 0,72 q -18,36 0,72"></path>
+                <path d="M 60,-120 q 22,44 0,88 q -22,44 0,88"></path>
+                <path d="M 170,-130 q 18,36 0,72 q -18,36 0,72"></path>
+              </g>
+
+              <!-- Anillos -->
+              <path class="ring" tabindex="0" data-layer="corteza" fill="url(#g-corteza)" d="M0,-240 A240,240 0 0,1 240,0 A240,240 0 0,1 0,240 L 0,212 A212,212 0 0,0 212,0 A212,212 0 0,0 0,-212 Z"></path>
+              <path class="ring" tabindex="0" data-layer="mantoSuperior" fill="url(#g-manto-sup)" d="M0,-212 A212,212 0 0,1 212,0 A212,212 0 0,1 0,212 L 0,180 A180,180 0 0,0 180,0 A180,180 0 0,0 0,-180 Z"></path>
+              <path class="ring" tabindex="0" data-layer="mantoInferior" fill="url(#g-manto-inf)" d="M0,-180 A180,180 0 0,1 180,0 A180,180 0 0,1 0,180 L 0,75 A75,75 0 0,0 75,0 A75,75 0 0,0 0,-75 Z"></path>
+
+              <!-- Núcleo externo con convección -->
+              <g id="outerCore">
+                <path class="ring" tabindex="0" data-layer="nucleoExterno" fill="url(#g-nucleo-ext)" d="M0,-75 A75,75 0 0,1 75,0 A75,75 0 0,1 0,75 L 0,38 A38,38 0 0,0 38,0 A38,38 0 0,0 0,-38 Z"></path>
+                <g class="conv" stroke="rgba(255,255,255,.5)" fill="none">
+                  <path d="M 25,-50 q 10,16 0,32 q -10,16 0,32"></path>
+                  <path d="M 50,-40 q 8,14 0,28 q -8,14 0,28"></path>
+                </g>
+              </g>
+
+              <!-- Núcleo interno + geodinamo (líneas de campo) -->
+              <g id="innerCore">
+                <path class="ring" tabindex="0" data-layer="nucleoInterno" fill="url(#g-nucleo-int)" d="M0,-38 A38,38 0 0,1 38,0 A38,38 0 0,1 0,38 L 0,0 Z"></path>
+                <!-- Grupo que rota para simular geodinamo -->
+                <g class="geo-rotate">
+                  <!-- Líneas de campo (semicírculos) -->
+                  <g stroke="rgba(255,255,255,.45)" fill="none">
+                    <path d="M 0,0 m 0,-50 a 50,50 0 0,1 0,100"></path>
+                    <path d="M 0,0 m 12,-60 a 62,62 0 0,1 0,120"></path>
+                    <path d="M 0,0 m -12,-60 a 62,62 0 0,0 0,120"></path>
+                    <path d="M 0,0 m 22,-72 a 74,74 0 0,1 0,148"></path>
+                  </g>
+                  <!-- Partículas sobre líneas (visual de “flujo”) -->
+                  <circle class="particle" cx="0" cy="-50" r="1.8" fill="#fff"></circle>
+                  <circle class="particle" cx="12" cy="-60" r="1.6" fill="#fff" style="animation-delay:.4s"></circle>
+                  <circle class="particle" cx="-12" cy="-60" r="1.6" fill="#fff" style="animation-delay:.8s"></circle>
+                  <circle class="particle" cx="22" cy="-72" r="1.4" fill="#fff" style="animation-delay:1.2s"></circle>
+                </g>
+              </g>
+
+              <!-- Flechas + rótulos (hotspots con tooltip) -->
+              <g id="labels" class="label" font-size="13">
+                <g class="hot" data-layer="corteza">
+                  <path class="arrow" d="M 245,-210 L 200,-210 L 168,-210" marker-end="url(#arrowHead)"></path>
+                  <text x="248" y="-206">Corteza</text>
+                </g>
+                <g class="hot" data-layer="mantoSuperior">
+                  <path class="arrow" d="M 260,-150 L 205,-150 L 190,-150" marker-end="url(#arrowHead)"></path>
+                  <text x="263" y="-146">Manto superior</text>
+                </g>
+                <g class="hot" data-layer="mantoInferior">
+                  <path class="arrow" d="M 270,-85 L 205,-85 L 170,-85" marker-end="url(#arrowHead)"></path>
+                  <text x="273" y="-81">Manto inferior</text>
+                </g>
+                <g class="hot" data-layer="nucleoExterno">
+                  <path class="arrow" d="M 250,-30 L 190,-30 L 125,-30" marker-end="url(#arrowHead)"></path>
+                  <text x="253" y="-26">Núcleo externo</text>
+                </g>
+                <g class="hot" data-layer="nucleoInterno">
+                  <path class="arrow" d="M 240,10 L 150,10 L 108,10" marker-end="url(#arrowHead)"></path>
+                  <text x="243" y="14">Núcleo interno</text>
+                </g>
+              </g>
+            </g>
+
+            <!-- Brillos -->
+            <ellipse rx="200" ry="200" fill="url(#shine)" opacity=".15"></ellipse>
+          </g>
+        </svg>
+      </div>
+    </section>
+
+    <!-- Panel de información -->
+    <aside class="panel" aria-live="polite">
+      <div class="toolbar">
+        <button class="btn" id="prevBtn" aria-label="Capa anterior">⟨</button>
+        <button class="btn" id="nextBtn" aria-label="Capa siguiente">⟩</button>
+        <button class="btn" id="speakBtn" title="Reproducir locución">🔊</button>
+      </div>
+
+      <h2 id="layerTitle">Bienvenido al Explorador</h2>
+      <div class="kvs" id="kvGrid" aria-hidden="true"></div>
+      <p class="desc" id="layerDesc">Pulsa un botón o un anillo para abrir la ficha ampliada de cada capa.</p>
+      <p class="curio" id="layerCurio" style="display:none"></p>
+
+      <div class="legend" aria-label="Leyenda">
+        <span class="leg-item"><span class="swatch" style="background:var(--corteza)"></span> Corteza</span>
+        <span class="leg-item"><span class="swatch" style="background:var(--manto-sup)"></span> Manto sup.</span>
+        <span class="leg-item"><span class="swatch" style="background:var(--manto-inf)"></span> Manto inf.</span>
+        <span class="leg-item"><span class="swatch" style="background:var(--nucleo-ext)"></span> Núcleo externo</span>
+        <span class="leg-item"><span class="swatch" style="background:var(--nucleo-int)"></span> Núcleo interno</span>
+      </div>
+      <p class="footer-note">Sugerencia: usa <kbd>Tab</kbd> para enfocar anillos o flechas, <kbd>Enter</kbd> para abrir su ficha.</p>
+    </aside>
+  </main>
+
+  <script>
+    // ===== Datos por capa (extendidos) =====
+    // Fuentes principales: USGS (estructura, geodinamo), Britannica (composición y temperaturas),
+    // NASA (corte y divulgación), LibreTexts / MinnState (porcentajes volumen/masa).
+    const layers = [
+      {
+        id: "corteza",
+        titulo: "Corteza",
+        color: "var(--corteza)",
+        kvs: [
+          ["Espesor típico", "Oceánica ~5–10 km; Continental ~30–40 km; hasta ~70–100 km bajo orógenos"],
+          ["Porcentaje", "Volumen ≈ 1–1.4% · Masa ≈ 0.4%"],
+          ["Densidad", "≈ 2.7 g/cm³ (continental) · 2.9–3.0 g/cm³ (oceánica)"],
+          ["Composición", "Silicatos: granitos (continental), basaltos (oceánica); límite con manto = Moho"]
+        ],
+        desc:
+`La corteza es la piel del planeta: rígida, frágil y muy delgada. Se fractura en placas que flotan sobre el manto superior.`,
+        curio:
+`Bajo los grandes sistemas montañosos, el Moho puede descender cerca de 70–100 km.`
+      },
+      {
+        id: "mantoSuperior",
+        titulo: "Manto superior",
+        color: "var(--manto-sup)",
+        kvs: [
+          ["Profundidad", "≈ 35–660 km (litosfera + astenosfera + zona de transición 410–660 km)"],
+          ["Porcentaje", "Parte del manto que junto al inferior suma ≈ 84% del volumen terrestre"],
+          ["Densidad", "≈ 3.3–3.9 g/cm³ (creciente con profundidad)"],
+          ["Composición", "Olivino, piroxenos; en transición: wadsleyita/ringwoodita (cambios de fase)"]
+        ],
+        desc:
+`Sólido que puede fluir a largo plazo. La astenosfera actúa como “cinta transportadora” para las placas. La zona 410–660 km marca cambios de fase mineral.`,
+        curio:
+`La mayor parte del basalto oceánico se origina por fusión parcial del manto superior bajo las dorsales.`
+      },
+      {
+        id: "mantoInferior",
+        titulo: "Manto inferior",
+        color: "var(--manto-inf)",
+        kvs: [
+          ["Profundidad", "≈ 660–2.900 km"],
+          ["Porcentaje", "≈ 56% del volumen de la Tierra"],
+          ["Densidad", "≈ 4.4–5.6 g/cm³ (aumenta con la profundidad)"],
+          ["Composición", "Bridgmanita, ferropericlasa y Ca-silicato perovskita (alta presión)"]
+        ],
+        desc:
+`Sólido y convectivo; controla gran parte del transporte de calor interno. Las mega-plumas térmicas pueden partir de la base del manto (zona Dʺ).`,
+        curio:
+`Aunque es sólido, la roca fluye con tiempos geológicos: se deforma plásticamente durante millones de años.`
+      },
+      {
+        id: "nucleoExterno",
+        titulo: "Núcleo externo",
+        color: "var(--nucleo-ext)",
+        kvs: [
+          ["Profundidad", "≈ 2.900–5.150 km"],
+          ["Porcentaje", "Mayor parte del volumen del núcleo (núcleo total ≈ 16% del volumen terrestre)"],
+          ["Densidad", "≈ 9.9–12.2 g/cm³ (Fe–Ni líquido con elementos ligeros)"],
+          ["Función", "Convección metálica que genera el campo magnético (geodinamo)"]
+        ],
+        desc:
+`Un océano de hierro líquido que hierve lentamente. Sus corrientes, combinadas con la rotación de la Tierra, mantienen el campo magnético.`,
+        curio:
+`Las inversiones del campo magnético han ocurrido muchas veces; durante la transición, el campo se debilita y se reorganiza.`
+      },
+      {
+        id: "nucleoInterno",
+        titulo: "Núcleo interno",
+        color: "var(--nucleo-int)",
+        kvs: [
+          ["Profundidad", "≈ 5.150–6.371 km (radio ~1.220 km)"],
+          ["Porcentaje", "Pequeña fracción del volumen, pero muy densa"],
+          ["Densidad", "≈ 12.8–13.1 g/cm³ (Fe mayoritario, con Ni y ligeros)"],
+          ["Características", "Sólido por presión; anisotropía cristalina; posible rotación diferencial"]
+        ],
+        desc:
+`Esfera sólida de hierro comprimida por presiones colosales. Aun tan caliente, permanece sólida debido a la presión.`,
+        curio:
+`Estudios sísmicos sugieren ligera rotación diferencial respecto al manto y anisotropía del hierro.`
+      },
+      // Superficie
+      {
+        id: "atmósfera",
+        pill: true,
+        titulo: "Atmósfera",
+        kvs: [["Extensión","~0–100 km (capas principales)"],["Función","Protección radiativa y regulación climática"]],
+        desc:`Mezcla gaseosa esencial para clima y vida.`,
+        curio:`La presión a nivel del mar equivale a ~10 m de agua sobre ti.`
+      },
+      {
+        id: "hidrosfera",
+        pill: true,
+        titulo: "Hidrosfera",
+        kvs: [["Cobertura","~71% de la superficie"],["Reserva","~97% salada; ~3% dulce"]],
+        desc:`Aguas líquidas, sólidas y gaseosas del planeta.`,
+        curio:`Los océanos lubrican la tectónica y modulan el clima.`
+      },
+      {
+        id: "litosfera",
+        pill: true,
+        titulo: "Litosfera",
+        kvs: [["Composición","Corteza + manto superior rígido"],["Dinámica","Placas sobre la astenosfera"]],
+        desc:`Capa “dura” donde viajan las placas tectónicas.`,
+        curio:`La litosfera oceánica se recicla en ~200 Ma; la continental dura eones.`
+      }
+    ];
+
+    const ringOrder = ["corteza","mantoSuperior","mantoInferior","nucleoExterno","nucleoInterno"];
+    const titleEl = document.getElementById('layerTitle');
+    const gridEl  = document.getElementById('kvGrid');
+    const descEl  = document.getElementById('layerDesc');
+    const curioEl = document.getElementById('layerCurio');
+
+    // Estado UI
+    const state = {
+      arrows: true, geodynamo: true, convection: true, zoom: 1, voice: false, expert: false, current: "mantoSuperior"
+    };
+
+    // ====== Render de ficha ======
+    function render(layerId){
+      const data = layers.find(l => l.id === layerId);
+      if(!data) return;
+
+      state.current = layerId;
+      titleEl.textContent = data.titulo;
+      descEl.textContent = data.desc;
+      curioEl.style.display = data.curio ? "block":"none";
+      curioEl.textContent = data.curio || "";
+
+      // KVs (modo aula/experto: en “aula” mostramos 3 primeros si hay muchos)
+      gridEl.innerHTML = ""; gridEl.setAttribute("aria-hidden","false");
+      const kvList = state.expert ? (data.kvs||[]) : (data.kvs||[]).slice(0,3);
+      kvList.forEach(([k,v])=>{
+        const div = document.createElement('div');
+        div.className = 'kv';
+        div.innerHTML = `<small>${k}</small><strong>${v}</strong>`;
+        gridEl.appendChild(div);
+      });
+
+      // Resaltado de anillos / botones
+      document.querySelectorAll('.ring').forEach(r=>{
+        r.style.transform = (r.dataset.layer === layerId) ? "translateX(4px) scale(1.02)" : "none";
+        r.style.filter     = (r.dataset.layer === layerId) ? "brightness(1.15) saturate(1.1)" : "";
+      });
+      document.querySelectorAll('.layer-btn').forEach(b=>{
+        b.style.outline = (b.dataset.layer === layerId) ? "2px solid var(--focus)" : "none";
+      });
+
+      if(state.voice) speakLayer(layerId);
+    }
+
+    // ====== Locución (Web Speech API) ======
+    function speakLayer(layerId){
+      try{
+        const data = layers.find(l => l.id === layerId);
+        if(!data) return;
+        window.speechSynthesis.cancel();
+        const kvText = (data.kvs||[]).map(([k,v])=>`${k}: ${v}.`).join(" ");
+        const text = `${data.titulo}. ${data.desc} ${kvText} ${data.curio? "Curiosidad: "+data.curio: ""}`;
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = "es-ES";
+        utter.rate = 1; utter.pitch = 1;
+        window.speechSynthesis.speak(utter);
+      }catch(e){ /* silencioso */ }
+    }
+
+    // ====== Tooltip ======
+    const tooltip = document.getElementById('tooltip');
+    function showTip(text, x, y){
+      tooltip.textContent = text;
+      tooltip.style.left = x+"px"; tooltip.style.top = y+"px";
+      tooltip.style.opacity = "1"; tooltip.setAttribute("aria-hidden","false");
+    }
+    function hideTip(){
+      tooltip.style.opacity = "0"; tooltip.setAttribute("aria-hidden","true");
+    }
+
+    // Eventos “hotspots” (flechas) y anillos
+    document.querySelectorAll('.hot').forEach(h=>{
+      h.addEventListener('mousemove', e=>{
+        const rect = document.getElementById('canvasWrap').getBoundingClientRect();
+        showTip(`💡 ${h.dataset.layer.replace('nucleo','núcleo')}: clic para ver ficha`, e.clientX-rect.left, e.clientY-rect.top);
+      });
+      h.addEventListener('mouseleave', hideTip);
+      h.addEventListener('click', ()=> render(h.dataset.layer));
+      h.addEventListener('keydown', (e)=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); render(h.dataset.layer);} });
+      h.setAttribute('tabindex','0');
+    });
+    document.querySelectorAll('.ring').forEach(r=>{
+      r.addEventListener('mousemove', e=>{
+        const rect = document.getElementById('canvasWrap').getBoundingClientRect();
+        const name = r.dataset.layer.replace('mantoSuperior','Manto superior').replace('mantoInferior','Manto inferior').replace('nucleo','núcleo');
+        showTip(`🔎 ${name}: clic para ver ficha`, e.clientX-rect.left, e.clientY-rect.top);
+      });
+      r.addEventListener('mouseleave', hideTip);
+      r.addEventListener('click', e=> render(e.currentTarget.dataset.layer));
+      r.addEventListener('keydown', e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); render(e.currentTarget.dataset.layer);} });
+    });
+
+    // Botones por capa y chips
+    document.querySelectorAll('.layer-btn,.chip').forEach(b=>{
+      b.addEventListener('click', e=> render(e.currentTarget.dataset.layer));
+    });
+
+    // Navegación
+    document.getElementById('prevBtn').addEventListener('click', ()=>{
+      const i = ringOrder.indexOf(state.current);
+      const idx = i>=0 ? (i - 1 + ringOrder.length) % ringOrder.length : 0;
+      render(ringOrder[idx]);
+    });
+    document.getElementById('nextBtn').addEventListener('click', ()=>{
+      const i = ringOrder.indexOf(state.current);
+      const idx = i>=0 ? (i + 1) % ringOrder.length : 0;
+      render(ringOrder[idx]);
+    });
+    document.getElementById('speakBtn').addEventListener('click', ()=> speakLayer(state.current));
+
+    // Controles de vista
+    const world = document.getElementById('world');
+    const labels = document.getElementById('labels');
+    const earth = document.getElementById('earth');
+
+    function applyAnimClasses(){
+      // geodynamo
+      earth.classList.toggle('anim-geodynamo', state.geodynamo);
+      // convección
+      earth.classList.toggle('anim-conv', state.convection);
+      // flechas
+      labels.style.display = state.arrows ? "block":"none";
+    }
+
+    document.getElementById('toggleArrows').addEventListener('change', (e)=>{ state.arrows = e.target.checked; applyAnimClasses(); });
+    document.getElementById('toggleGeo').addEventListener('change', (e)=>{ state.geodynamo = e.target.checked; applyAnimClasses(); });
+    document.getElementById('toggleConv').addEventListener('change', (e)=>{ state.convection = e.target.checked; applyAnimClasses(); });
+    document.getElementById('toggleVoice').addEventListener('change', (e)=>{ state.voice = e.target.checked; if(state.voice) speakLayer(state.current); else window.speechSynthesis?.cancel(); });
+    document.getElementById('toggleExpert').addEventListener('change', (e)=>{ state.expert = e.target.checked; render(state.current); });
+
+    // Zoom
+    const zoomRange = document.getElementById('zoomRange');
+    const zoomVal = document.getElementById('zoomVal');
+    zoomRange.addEventListener('input', (e)=>{
+      const z = e.target.value/100;
+      state.zoom = z;
+      world.setAttribute('transform', `translate(270,270) scale(${z})`);
+      zoomVal.textContent = Math.round(z*100)+"%";
+    });
+
+    // Reset
+    document.getElementById('resetBtn').addEventListener('click', ()=>{
+      state.arrows = true; state.geodynamo = true; state.convection = true; state.zoom = 1; state.voice = false; state.expert = false;
+      document.getElementById('toggleArrows').checked = true;
+      document.getElementById('toggleGeo').checked = true;
+      document.getElementById('toggleConv').checked = true;
+      document.getElementById('toggleVoice').checked = false;
+      document.getElementById('toggleExpert').checked = false;
+      zoomRange.value = 100; zoomVal.textContent = "100%";
+      world.setAttribute('transform', `translate(270,270) scale(1)`);
+      applyAnimClasses();
+    });
+
+    // Estado inicial
+    applyAnimClasses();
+    render("mantoSuperior");
+  </script>
+
+  <!--
+    ───────────────────────────────────────────────────────────────────────────
+    Fuentes (resumen)
+    ───────────────────────────────────────────────────────────────────────────
+    • USGS – Inside the Earth (capas, espesores, núcleo externo líquido e interno sólido):
+      https://pubs.usgs.gov/gip/dynamic/inside.html   [turn1search2]
+    • USGS – FAQ Geodinamo (campo magnético generado por convección del núcleo externo):
+      https://www.usgs.gov/faqs/how-does-earths-core-generate-a-magnetic-field   [turn1search16]
+    • Encyclopaedia Britannica – The interior (composición, temperaturas estimadas, Moho):
+      https://www.britannica.com/place/Earth/The-interior   [turn1search6]
+    • NASA – Cut-away Diagram of Earth’s Interior (divulgación núcleo interno/geodinamo):
+      https://www.nasa.gov/image-article/cut-away-diagram-of-earths-interior/   [turn1search13]
+    • Porcentajes volumen/masa (manto ~82.5% vol; núcleo ~16.1%; corteza ~1.4%; masa: manto ~68%, núcleo ~31%):
+      https://minnstate.pressbooks.pub/environmentalgeology/chapter/earths-layers/   [turn2search24]
+      https://geo.libretexts.org/Courses/Lumen_Learning/Physical_Geography_(Lumen)/5.03:_The_Composition_and_Structure_of_Earth   [turn2search21]
+    • Densidades aproximadas por capa (tablas y rangos educativos):
+      https://pubs.usgs.gov/gip/interior/   [turn2search51]
+      http://www.eeescience.utoledo.edu/Faculty/Krantz/Hazards/Hazards.Chap_01a.Earth_structure.pdf   [turn2search27]
+      https://www.ck12.org/flexi/earth-science/earths-core/what-is-the-density-of-the-earth's-inner-core/   [turn2search32]
+    • Manto inferior ≈56% del volumen (660–2890 km):
+      https://en.wikipedia.org/wiki/Lower_mantle   [turn2search38]
+  -->
+
+
+
+</body></html>
